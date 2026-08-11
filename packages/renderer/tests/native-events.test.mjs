@@ -70,6 +70,9 @@ test('renders native Codama events with their IDL-defined CPI discriminator', ()
         assert.match(cpiEvent, /if discriminator != \[1, 2, 3, 4\]/);
         assert.match(cpiEvent, /let event_data = &data\[4\.\.\]/);
 
+        const lib = readFileSync(join(outputDirectory, 'src/lib.rs'), 'utf8');
+        assert.match(lib, /pub const EVENT_CPI_DISCRIMINATOR: &\[u8\] = &\[1, 2, 3, 4\];/);
+
         const generatedEvent = readFileSync(join(outputDirectory, 'src/events/payment_created.rs'), 'utf8');
         assert.match(generatedEvent, /pub struct PaymentCreatedEvent/);
         assert.match(generatedEvent, /if discriminator != \[9\]/);
@@ -315,6 +318,9 @@ test('lets the eventCpiDiscriminator option override the hidden-prefix envelope'
         assert.match(cpiEvent, /if data\.len\(\) < 2/);
         assert.match(cpiEvent, /if discriminator != \[13, 37\]/);
         assert.match(cpiEvent, /let event_data = &data\[2\.\.\]/);
+
+        const lib = readFileSync(join(outputDirectory, 'src/lib.rs'), 'utf8');
+        assert.match(lib, /pub const EVENT_CPI_DISCRIMINATOR: &\[u8\] = &\[13, 37\];/);
 
         const generatedEvent = readFileSync(join(outputDirectory, 'src/events/payout_redirected.rs'), 'utf8');
         assert.match(generatedEvent, /if discriminator != \[209, 22, 185, 215, 84, 167, 84, 80\]/);
@@ -653,6 +659,9 @@ test('keeps an explicit empty anchorEvents option as an event opt-out', () => {
         );
 
         assert.equal(existsSync(join(outputDirectory, 'src/instructions/cpi_event.rs')), false);
+
+        const lib = readFileSync(join(outputDirectory, 'src/lib.rs'), 'utf8');
+        assert.doesNotMatch(lib, /EVENT_CPI_DISCRIMINATOR/);
     } finally {
         rmSync(outputDirectory, { force: true, recursive: true });
     }
