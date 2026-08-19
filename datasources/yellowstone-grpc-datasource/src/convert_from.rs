@@ -300,3 +300,61 @@ fn create_hash(hash: &[u8]) -> ConvertResult<Hash> {
         .map(Hash::new_from_array)
         .map_err(|_| "failed to parse Hash")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn proto_message(versioned: bool, config: Option<proto::TransactionConfig>) -> proto::Message {
+        proto::Message {
+            header: Some(proto::MessageHeader {
+                num_required_signatures: 1,
+                num_readonly_signed_accounts: 0,
+                num_readonly_unsigned_accounts: 1,
+            }),
+            account_keys: vec![vec![1u8; 32], vec![2u8; 32]],
+            recent_blockhash: vec![3u8; HASH_BYTES],
+            instructions: vec![proto::CompiledInstruction {
+                program_id_index: 1,
+                accounts: vec![0],
+                data: vec![9],
+            }],
+            versioned,
+            address_table_lookups: vec![],
+            config,
+        }
+    }
+
+    /// The wire format has no version field, and `versioned` is true for both
+    /// V0 and V1, so the presence of `config` is the only thing separating
+    /// them. Reading `versioned` alone silently reports a V1 message as V0
+    /// with no budget at all.
+    #[test]
+    fn discriminates_v1_on_config_rather_than_the_versioned_flag() {
+        let config = proto::TransactionConfig {
+            priority_fee: Some(5_000),
+            compute_unit_limit: Some(30_000),
+            loaded_accounts_data_size_limit: Some(200_000),
+            heap_size: None,
+        };
+
+        let message = create_message(proto_message(true, Some(config))).expect("v1 message");
+        let VersionedMessage::V1(v1) = message else {
+            panic!("a message carrying config is v1");
+        };
+        assert_eq!(v1.config.priority_fee, Some(5_000));
+        assert_eq!(v1.config.compute_unit_limit, Some(30_000));
+        assert_eq!(v1.config.loaded_accounts_data_size_limit, Some(200_000));
+        assert_eq!(v1.config.heap_size, None);
+        assert_eq!(v1.lifetime_specifier, Hash::new_from_array([3u8; 32]));
+
+        assert!(matches!(
+            create_message(proto_message(true, None)).expect("v0 message"),
+            VersionedMessage::V0(_)
+        ));
+        assert!(matches!(
+            create_message(proto_message(false, None)).expect("legacy message"),
+            VersionedMessage::Legacy(_)
+        ));
+    }
+}
