@@ -1,9 +1,18 @@
 //! Conversion from the Yellowstone protobuf wire types into the Solana types
 //! the pipeline consumes.
 //!
-//! `yellowstone-grpc-proto` dropped its `convert` feature in 12.0.0 and moved
-//! those helpers into `yellowstone-grpc-geyser`, which is AGPL-3.0 and
-//! unpublished, so this crate carries its own conversion.
+//! Derived from the `convert_from` module of `yellowstone-grpc-proto` 11.0.1,
+//! Copyright Triton One, licensed under the Apache License, Version 2.0
+//! (<http://www.apache.org/licenses/LICENSE-2.0>):
+//! <https://github.com/rpcpool/yellowstone-grpc/blob/v11.0.1%2Bsolana.3.1.8/yellowstone-grpc-proto/src/lib.rs>
+//!
+//! That crate dropped its `convert` feature in 12.0.0 and moved these helpers
+//! into the AGPL-3.0 `yellowstone-grpc-geyser`, which is unpublished, so this
+//! crate carries its own copy.
+//!
+//! Changes from the original: v1 transaction support (SIMD-0385), the
+//! `Reward::commission_bps` field (SIMD-0291), and `wincode` in place of
+//! `bincode` for `TransactionError`.
 
 use {
     solana_account_decoder::parse_token::UiTokenAmount,
