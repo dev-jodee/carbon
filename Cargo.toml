@@ -3,11 +3,18 @@ members = ["crates/*", "datasources/*", "decoders/*", "metrics/*"]
 # Third-party SDKs (`helius`, `jetstreamer-firehose`) still pin solana 3.x, which
 # cannot coexist with the solana 4.x types the v1 transaction format needs. The
 # examples are dropped with them because they depend on those datasources.
+# `validator-snapshot-datasource` builds on `agave-unstable-api`, whose internals
+# moved between agave 3.1 and 4.2. The remaining three need porting to solana
+# 4.x APIs that changed independently of the transaction format.
 exclude = [
     "datasources/helius-atlas-ws-datasource",
     "datasources/helius-gpa-v2-datasource",
     "datasources/helius-gtfa-datasource",
     "datasources/jetstreamer-datasource",
+    "datasources/rpc-gpa-datasource",
+    "datasources/rpc-program-subscribe-datasource",
+    "datasources/validator-snapshot-datasource",
+    "decoders/token-2022-decoder",
     "examples",
 ]
 resolver = "2"
@@ -145,10 +152,10 @@ solana-transaction-status = { version = "^4.2.1", features = ["agave-unstable-ap
 solana-transaction-status-client-types = "^4.2.1"
 spl-memo-interface = "2.0.0"
 spl-pod = "0.7.1"
-spl-token-2022 = "10.0.0"
+spl-token-2022 = "11.0.0"
 spl-token-group-interface = "0.7.1"
-spl-token-interface = "2.0.0"
-spl-token-metadata-interface = "0.8.0"
+spl-token-interface = "3.0.0"
+spl-token-metadata-interface = "1.0.1"
 spl-type-length-value = "0.9.0"
 wincode = "0.5.5"
 yellowstone-grpc-client = { version = "13.3.0" }
