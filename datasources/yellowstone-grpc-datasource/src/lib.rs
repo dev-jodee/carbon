@@ -86,6 +86,15 @@ fn register_yellowstone_metrics() {
 /// Default timeout for detecting stale connections (30 seconds)
 pub const DEFAULT_STREAM_TIMEOUT_SECS: u64 = 30;
 
+const SUBSCRIBE_RETRY_BASE_DELAY: Duration = Duration::from_millis(500);
+const SUBSCRIBE_RETRY_MAX_DELAY: Duration = Duration::from_secs(30);
+
+fn subscribe_retry_delay(consecutive_failures: u32) -> Duration {
+    SUBSCRIBE_RETRY_BASE_DELAY
+        .saturating_mul(2u32.saturating_pow(consecutive_failures))
+        .min(SUBSCRIBE_RETRY_MAX_DELAY)
+}
+
 #[derive(Debug)]
 pub struct YellowstoneGrpcGeyserClient {
     pub endpoint: String,
@@ -267,6 +276,7 @@ impl Datasource for YellowstoneGrpcGeyserClient {
             let mut last_disconnect_time: Option<DateTime<Utc>> = None;
             let mut last_slot_before_disconnect: Option<u64> = None;
             let mut last_processed_slot: u64 = 0;
+            let mut consecutive_subscribe_failures: u32 = 0;
 
             loop {
                 tokio::select! {
@@ -277,6 +287,8 @@ impl Datasource for YellowstoneGrpcGeyserClient {
                     result = geyser_client.subscribe_with_request(Some(subscribe_request.clone())) => {
                         match result {
                             Ok((mut subscribe_tx, mut stream)) => {
+                                consecutive_subscribe_failures = 0;
+
                                 let mut first_message_after_reconnect = last_disconnect_time.is_some();
 
                                 loop {
@@ -432,6 +444,17 @@ impl Datasource for YellowstoneGrpcGeyserClient {
                                     last_slot_before_disconnect = Some(last_processed_slot);
                                 }
 
+                                let retry_delay = subscribe_retry_delay(consecutive_subscribe_failures);
+                                consecutive_subscribe_failures = consecutive_subscribe_failures.saturating_add(1);
+                                log::warn!("Retrying Yellowstone gRPC subscription in {retry_delay:?}");
+
+                                tokio::select! {
+                                    _ = cancellation_token.cancelled() => {
+                                        log::info!("Cancelling Yellowstone gRPC subscription.");
+                                        break;
+                                    }
+                                    _ = tokio::time::sleep(retry_delay) => {}
+                                }
                             }
                         }
                     }
@@ -572,3 +595,4 @@ async fn send_subscribe_update_transaction_info(
         log::error!("No transaction info in `UpdateOneof::Transaction` at slot {slot}");
     }
 }
+
