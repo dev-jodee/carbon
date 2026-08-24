@@ -24,7 +24,7 @@ use {
         compiled_instruction::CompiledInstruction, v0::LoadedAddresses, VersionedMessage,
     },
     solana_pubkey::Pubkey,
-    solana_transaction_context::TransactionReturnData,
+    solana_transaction_context::transaction::TransactionReturnData,
     solana_transaction_status::{
         option_serializer::OptionSerializer, InnerInstruction, InnerInstructions, Reward,
         TransactionStatusMeta, TransactionTokenBalance, UiInstruction, UiLoadedAddresses,
@@ -49,7 +49,9 @@ pub fn extract_instructions_with_metadata(
                 &meta.inner_instructions,
                 transaction_metadata,
                 &mut instructions_with_metadata,
-                |_, idx| legacy.is_maybe_writable(idx, None),
+                |_, idx| {
+                    legacy.is_maybe_writable_with_reserved_addresses(idx, None::<&HashSet<Pubkey>>)
+                },
                 |_, idx| legacy.is_signer(idx),
             );
         }
@@ -87,6 +89,27 @@ pub fn extract_instructions_with_metadata(
                     }
                 },
                 |_, idx| idx < v0.header.num_required_signatures as usize,
+            );
+        }
+        VersionedMessage::V1(v1) => {
+            process_instructions(
+                &v1.account_keys,
+                &v1.instructions,
+                &meta.inner_instructions,
+                transaction_metadata,
+                &mut instructions_with_metadata,
+                |_, idx| {
+                    let num_static = v1.account_keys.len();
+                    let num_signers = v1.header.num_required_signatures as usize;
+                    let num_readonly_signed = v1.header.num_readonly_signed_accounts as usize;
+                    let num_readonly_unsigned = v1.header.num_readonly_unsigned_accounts as usize;
+                    if idx < num_signers {
+                        idx < num_signers - num_readonly_signed
+                    } else {
+                        idx < num_static - num_readonly_unsigned
+                    }
+                },
+                |_, idx| v1.is_signer(idx),
             );
         }
     }
@@ -218,7 +241,7 @@ pub fn extract_account_metas(
                 .get(*account_index as usize)
                 .ok_or(Error::MissingAccountInTransaction)?,
             is_signer: message.is_signer(*account_index as usize),
-            is_writable: message.is_maybe_writable(
+            is_writable: message.is_maybe_writable_with_reserved_addresses(
                 *account_index as usize,
                 Some(
                     &message
@@ -345,6 +368,7 @@ pub fn transaction_metadata_from_original_meta(
                     post_balance: rewards.post_balance,
                     reward_type: rewards.reward_type,
                     commission: rewards.commission,
+                    commission_bps: rewards.commission_bps,
                 })
                 .collect::<Vec<Reward>>(),
         ),
@@ -393,7 +417,7 @@ mod tests {
         solana_message::{
             legacy::Message,
             v0::{self, MessageAddressTableLookup},
-            MessageHeader,
+            v1, MessageHeader,
         },
         solana_signature::Signature,
         solana_transaction::versioned::VersionedTransaction,
@@ -711,6 +735,76 @@ mod tests {
         assert_eq!(partial.len(), 2);
         assert_eq!(partial[0].0.absolute_path, vec![0]);
         assert_eq!(partial[1].0.absolute_path, vec![0, 0]);
+    }
+
+    /// V1 forbids address lookup tables, so every account is static and the
+    /// signer/writable flags derive from the header alone, with no
+    /// `meta.loaded_addresses` fallback for out-of-range indexes.
+    #[test]
+    fn test_extract_instructions_from_v1_message_uses_header_flags() {
+        let signer_writable = Pubkey::new_unique();
+        let signer_readonly = Pubkey::new_unique();
+        let writable = Pubkey::new_unique();
+        let program = Pubkey::new_unique();
+
+        let update = TransactionUpdate {
+            signature: Signature::default(),
+            transaction: VersionedTransaction {
+                signatures: vec![Signature::default(); 2],
+                message: VersionedMessage::V1(v1::Message {
+                    header: MessageHeader {
+                        num_required_signatures: 2,
+                        num_readonly_signed_accounts: 1,
+                        num_readonly_unsigned_accounts: 1,
+                    },
+                    config: v1::TransactionConfig {
+                        compute_unit_limit: Some(30_000),
+                        loaded_accounts_data_size_limit: Some(200_000),
+                        priority_fee: None,
+                        heap_size: None,
+                    },
+                    lifetime_specifier: Hash::default(),
+                    account_keys: vec![signer_writable, signer_readonly, writable, program],
+                    instructions: vec![CompiledInstruction {
+                        program_id_index: 3,
+                        accounts: vec![0, 1, 2],
+                        data: vec![],
+                    }],
+                }),
+            },
+            meta: TransactionStatusMeta {
+                loaded_addresses: LoadedAddresses {
+                    writable: vec![Pubkey::new_unique()],
+                    readonly: vec![Pubkey::new_unique()],
+                },
+                ..Default::default()
+            },
+            is_vote: false,
+            slot: 1,
+            index: None,
+            block_time: None,
+            block_hash: None,
+        };
+
+        let extracted =
+            extract_instructions_with_metadata(&Arc::new(TransactionMetadata::default()), &update)
+                .expect("extract instructions with metadata");
+
+        assert_eq!(extracted.len(), 1);
+        let instruction = &extracted[0].1;
+        assert_eq!(instruction.program_id, program);
+        assert_eq!(
+            instruction
+                .accounts
+                .iter()
+                .map(|account| (account.pubkey, account.is_signer, account.is_writable))
+                .collect::<Vec<_>>(),
+            vec![
+                (signer_writable, true, true),
+                (signer_readonly, true, false),
+                (writable, false, true),
+            ]
+        );
     }
 
     #[test]

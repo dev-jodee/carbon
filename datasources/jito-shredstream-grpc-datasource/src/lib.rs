@@ -126,7 +126,7 @@ impl Datasource for JitoShredstreamGrpcClient {
                         let block_time =
                             Some(recv_time.duration_since(UNIX_EPOCH).expect("Time").as_millis() as i64);
 
-                        let entries: Vec<Entry> = match bincode::deserialize(&message.entries) {
+                        let entries: Vec<Entry> = match wincode::deserialize(&message.entries) {
                             Ok(e) => e,
                             Err(e) => {
                                 log::error!("Failed to deserialize entries at slot {}: {e:?}", message.slot);
