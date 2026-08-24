@@ -595,4 +595,3 @@ async fn send_subscribe_update_transaction_info(
         log::error!("No transaction info in `UpdateOneof::Transaction` at slot {slot}");
     }
 }
-
