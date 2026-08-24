@@ -1123,7 +1123,6 @@ name = "carbon-jito-shredstream-grpc-datasource"
 version = "1.0.0"
 dependencies = [
  "async-trait",
- "bincode",
  "carbon-core",
  "carbon-jito-protos",
  "futures",
@@ -1134,6 +1133,7 @@ dependencies = [
  "solana-transaction-status",
  "tokio",
  "tokio-util",
+ "wincode",
 ]
 
 [[package]]
